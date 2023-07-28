@@ -1,0 +1,9 @@
+indent_style = "Block"
+tab_spaces = 2
+reorder_imports = true
+group_imports = "StdExternalCrate"
+blank_lines_lower_bound = 0
+blank_lines_upper_bound = 1
+empty_item_single_line = false
+fn_single_line = true
+overflow_delimited_expr = true
