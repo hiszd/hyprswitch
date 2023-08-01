@@ -136,6 +136,20 @@ impl MonRtrn {
   }
 }
 
+fn parse_cmd(c: String, mons: &MonRtrn) -> Vec<String> {
+  let mut cmds: Vec<String> = Vec::new();
+  // TODO: return the string with the monitors name replaced
+  // NOTE: maybe use regex builder of some kind?
+  if let Some(ind) = c.find("${") {
+    let mut cmd: String = c[ind + 2..c.len()].to_string();
+    if let Some(inde) = cmd.find("}") {
+      cmd = cmd[0..inde].to_string();
+    }
+    cmds.push(cmd);
+  }
+  cmds
+}
+
 fn parse_mons(m: &String) -> MonRtrn {
   let mut parts: MonRtrn = MonRtrn::new();
   m.split(',').for_each(|e| {
@@ -150,16 +164,19 @@ fn parse_mons(m: &String) -> MonRtrn {
 
 fn check_config(config: &Vec<Action>, mon: &MonList) -> Result<(), io::Error> {
   config.iter().for_each(|a| {
-    let mons = parse_mons(&a.mons);
+    let mons: MonRtrn = parse_mons(&a.mons);
     if mon
       .monitors
       .iter()
       .any(|m| a.mons.contains(m.name.as_str()))
     {
-      println!("{}", a.mons);
-      a.cmds.iter().for_each(|c| {
-        println!("{}", c);
-        let mut cmd = Command::new("/usr/bin/hyprctl").arg(c);
+      println!("id: {}", a.mons);
+      a.cmds.iter().enumerate().for_each(|(i, c)| {
+        let cmd = parse_cmd(c.to_owned(), &mons);
+        cmd.iter().for_each(|e| {
+        });
+        println!("cmd{}: {} :: {:?}", i, c, cmd);
+        // let mut cmd = Command::new("/usr/bin/hyprctl").arg(c);
       });
     }
   });
