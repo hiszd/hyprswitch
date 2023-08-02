@@ -27,6 +27,7 @@ use std::{
 };
 
 use clap::Parser;
+use human_regex::{any, beginning, digit, end, exactly, one_or_more, text};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::de::IoRead;
 use serde_json::Value;
@@ -105,7 +106,7 @@ fn get_monitors() -> MonList {
 fn get_config() -> Result<Vec<Action>, io::Error> {
   let dir: &str =
     &(home::home_dir().unwrap().to_str().unwrap().to_owned() + "/.config/hyprswitch/");
-  println!("{}", dir);
+  println!("config: \n{}", dir);
 
   fs::create_dir_all(dir).unwrap();
   let mut fil: String = String::new();
@@ -140,13 +141,18 @@ fn parse_cmd(c: String, mons: &MonRtrn) -> Vec<String> {
   let mut cmds: Vec<String> = Vec::new();
   // TODO: return the string with the monitors name replaced
   // NOTE: maybe use regex builder of some kind?
-  if let Some(ind) = c.find("${") {
-    let mut cmd: String = c[ind + 2..c.len()].to_string();
-    if let Some(inde) = cmd.find("}") {
-      cmd = cmd[0..inde].to_string();
-    }
-    cmds.push(cmd);
-  }
+  let mut monrepl: MonRtrn = MonRtrn::new();
+  let num_regex = one_or_more(digit());
+  let req_regex = text("${&mons") + one_or_more(digit()) + text("}");
+  let opt_regex = text("${mons") + one_or_more(digit()) + text("}");
+  println!("{}", req_regex.to_string());
+  let mut bob: String = String::from(c);
+  req_regex.to_regex().find_iter(&bob).for_each(|e| {
+    let b = bob.split(e.as_str());
+    let num: usize = num_regex.to_regex().find(e.as_str()).unwrap().as_str().parse().unwrap();
+    bob = b.join(mons.required[num]);
+    // e.as_str();
+  });
   cmds
 }
 
@@ -173,8 +179,7 @@ fn check_config(config: &Vec<Action>, mon: &MonList) -> Result<(), io::Error> {
       println!("id: {}", a.mons);
       a.cmds.iter().enumerate().for_each(|(i, c)| {
         let cmd = parse_cmd(c.to_owned(), &mons);
-        cmd.iter().for_each(|e| {
-        });
+        cmd.iter().for_each(|e| {});
         println!("cmd{}: {} :: {:?}", i, c, cmd);
         // let mut cmd = Command::new("/usr/bin/hyprctl").arg(c);
       });
