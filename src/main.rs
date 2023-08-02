@@ -1,37 +1,41 @@
-#![allow(unused)]
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-extern crate strum; // 0.10.0
-#[macro_use]
-extern crate strum_macros; // 0.10.0
 extern crate clap;
 extern crate serde_derive;
 extern crate serde_json;
+extern crate strum;
+extern crate strum_macros;
+use std::env;
+use std::error;
+use std::fmt;
 use std::fs;
-use std::net::SocketAddr;
-use std::{env, ops::IndexMut};
-use std::{error::Error, process::Command};
-use std::{
-  fmt,
-  io::{Read, Write},
-};
-use std::{fs::read, thread};
-use std::{
-  io,
-  os::unix::net::{UnixListener, UnixStream},
-};
+use std::os::unix::net::UnixStream;
+use std::process::Command;
 use std::{
   io::{BufRead, BufReader},
   path::Path,
 };
 
-use clap::Parser;
-use human_regex::{any, beginning, digit, end, exactly, one_or_more, text};
+use human_regex::{digit, one_or_more, text};
 use serde_derive::{Deserialize, Serialize};
-use serde_json::de::IoRead;
-use serde_json::Value;
-use strum::IntoEnumIterator;
+
+type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
+
+#[derive(Debug, Clone)]
+struct MonitorIndex;
+
+impl fmt::Display for MonitorIndex {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(
+      f,
+      "monitor variable asked for a monitor index that doesn't exist",
+    )
+  }
+}
+
+impl error::Error for MonitorIndex {
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Action {
@@ -103,20 +107,19 @@ fn get_monitors() -> MonList {
   MonList { monitors: monjson }
 }
 
-fn get_config() -> Result<Vec<Action>, io::Error> {
+fn get_config() -> Result<Vec<Action>> {
   let dir: &str =
     &(home::home_dir().unwrap().to_str().unwrap().to_owned() + "/.config/hyprswitch/");
-  println!("config: \n{}", dir);
 
   fs::create_dir_all(dir).unwrap();
-  let mut fil: String = String::new();
+  let fil: String;
   match fs::read_to_string(dir.to_owned() + "config.json") {
     Ok(b) => fil = b,
     Err(e) => {
-      return Err(e);
+      return Err(e.into());
     }
   };
-  println!("{}", fil);
+  // println!("{}", fil);
 
   let jsn: Vec<Action> = serde_json::from_str(&fil).unwrap();
   Ok(jsn)
@@ -137,23 +140,71 @@ impl MonRtrn {
   }
 }
 
-fn parse_cmd(c: String, mons: &MonRtrn) -> Vec<String> {
+/// Function to replace variables with the values
+fn parse_cmd(c: String, mons: &MonRtrn) -> Result<(String, Vec<String>)> {
   let mut cmds: Vec<String> = Vec::new();
   // TODO: return the string with the monitors name replaced
-  // NOTE: maybe use regex builder of some kind?
-  let mut monrepl: MonRtrn = MonRtrn::new();
   let num_regex = one_or_more(digit());
-  let req_regex = text("${&mons") + one_or_more(digit()) + text("}");
-  let opt_regex = text("${mons") + one_or_more(digit()) + text("}");
-  println!("{}", req_regex.to_string());
-  let mut bob: String = String::from(c);
-  req_regex.to_regex().find_iter(&bob).for_each(|e| {
-    let b = bob.split(e.as_str());
-    let num: usize = num_regex.to_regex().find(e.as_str()).unwrap().as_str().parse().unwrap();
-    bob = b.join(mons.required[num]);
-    // e.as_str();
+  let req_regex = text("${mons") + one_or_more(digit()) + text("}");
+  let opt_regex = text("${&mons") + one_or_more(digit()) + text("}");
+  let mut req: Vec<String> = Vec::new();
+  println!("\n*** {:?} ***", mons);
+  req_regex.to_regex().find_iter(&c).for_each(|e| {
+    cmds.push(e.as_str().to_string());
+    let b: Vec<&str> = c.split(e.as_str()).collect();
+    let num: usize = num_regex
+      .to_regex()
+      .find(e.as_str())
+      .unwrap()
+      .as_str()
+      .parse()
+      .unwrap();
+    if mons.required.len() >= num {
+      req.push(b.join(&mons.required[num - 1]));
+    } else {
+      println!(
+        "monitor variable {} asks for {}, but there are only {} monitors",
+        e.as_str(),
+        num,
+        mons.required.len()
+      );
+      Err::<(String, Vec<String>), MonitorIndex>(MonitorIndex).unwrap();
+    }
   });
-  cmds
+  if req.len() == 0 {
+    req.push(c);
+  }
+  let req_string = req.join(",");
+
+  let mut opt: Vec<String> = Vec::new();
+
+  opt_regex.to_regex().find_iter(&req_string).for_each(|e| {
+    cmds.push(e.as_str().to_string());
+    let b: Vec<&str> = req_string.split(e.as_str()).collect();
+    let num: usize = num_regex
+      .to_regex()
+      .find(e.as_str())
+      .unwrap()
+      .as_str()
+      .parse()
+      .unwrap();
+    if mons.optional.len() >= num {
+      opt.push(b.join(&mons.optional[num - 1]));
+    } else {
+      println!(
+        "monitor variable {} asks for {}, but there are only {} monitors",
+        e.as_str(),
+        num,
+        mons.optional.len()
+      );
+      Err::<(String, Vec<String>), MonitorIndex>(MonitorIndex).unwrap();
+    }
+  });
+  if opt.len() == 0 {
+    opt.push(req_string);
+  }
+
+  Ok((opt.join(""), cmds))
 }
 
 fn parse_mons(m: &String) -> MonRtrn {
@@ -168,27 +219,62 @@ fn parse_mons(m: &String) -> MonRtrn {
   parts
 }
 
-fn check_config(config: &Vec<Action>, mon: &MonList) -> Result<(), io::Error> {
-  config.iter().for_each(|a| {
-    let mons: MonRtrn = parse_mons(&a.mons);
-    if mon
-      .monitors
-      .iter()
-      .any(|m| a.mons.contains(m.name.as_str()))
-    {
-      println!("id: {}", a.mons);
-      a.cmds.iter().enumerate().for_each(|(i, c)| {
-        let cmd = parse_cmd(c.to_owned(), &mons);
-        cmd.iter().for_each(|e| {});
-        println!("cmd{}: {} :: {:?}", i, c, cmd);
-        // let mut cmd = Command::new("/usr/bin/hyprctl").arg(c);
+/// take the list of actions and the active monitors and determine the config to apply
+fn determine_config(actions: Vec<Action>, mons: MonList) -> Result<Action> {
+  let mut confident_action: (usize, usize) = (0, 0);
+  // TODO: if monitor is detected and not on required or optional list then optmatch -= 1
+  actions.iter().enumerate().for_each(|(i, e)| {
+    let mut reqmatch: usize = 0;
+    let mut optmatch: usize = 0;
+    let montyp: MonRtrn = parse_mons(&e.mons);
+    println!(
+      "\n{:?} *** {:?}\n",
+      montyp,
+      mons
+        .monitors
+        .iter()
+        .map(|e| e.name.as_str())
+        .collect::<Vec<&str>>()
+    );
+    if montyp.required.iter().len() > 0 {
+      montyp.required.iter().for_each(|e| {
+        if mons.monitors.iter().find(|f| &f.name == e).is_some() {
+          reqmatch += 1;
+        }
       });
+      if reqmatch == montyp.required.iter().len() {
+        if montyp.optional.iter().len() > 0 {
+          montyp.optional.iter().for_each(|e| {
+            if mons.monitors.iter().find(|f| &f.name == e).is_some() {
+              optmatch += 1;
+            }
+          });
+        }
+      }
     }
+    if confident_action.1 < optmatch {
+      confident_action.0 = i;
+      confident_action.1 = optmatch + reqmatch;
+    }
+    println!("{:?} || {}", actions[i], optmatch + reqmatch);
   });
-  Ok(())
+  let mut final_action = actions[confident_action.0].clone();
+  final_action.cmds = final_action
+    .cmds
+    .iter()
+    .map(|e| {
+      parse_cmd(
+        e.to_string(),
+        &parse_mons(&actions[confident_action.0].mons),
+      )
+      .unwrap()
+      .0
+    })
+    .collect();
+  Ok(final_action)
 }
 
-fn main() -> Result<(), io::Error> {
+fn main() -> Result<()> {
   // get hyprland instance for socket path
   let hyprland_instance = env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap();
 
@@ -196,14 +282,15 @@ fn main() -> Result<(), io::Error> {
   let filepath = "/tmp/hypr/".to_owned() + &hyprland_instance + "/.socket2.sock";
   let path = Path::new(&filepath);
 
-  let mut config: Vec<Action> = get_config().unwrap();
+  let config: Vec<Action> = get_config().unwrap();
 
-  let mut mon = get_monitors();
+  let mut mon: MonList = get_monitors();
 
-  check_config(&config, &mon);
+  println!("rtrn: {:?}", determine_config(config, mon.clone())?);
+  // check_config(&config, &mon)?;
 
   loop {
-    let mut strm = UnixStream::connect(path).unwrap();
+    let strm = UnixStream::connect(path).unwrap();
 
     let stream = BufReader::new(strm);
 
@@ -222,5 +309,4 @@ fn main() -> Result<(), io::Error> {
       }
     })
   }
-  Ok(())
 }
