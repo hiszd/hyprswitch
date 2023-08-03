@@ -286,6 +286,7 @@ fn main() -> Result<()> {
 
   let mut conf = determine_config(get_config()?, mon.clone())?;
 
+  exec_cmds(conf.cmds.clone()).unwrap();
   println!("rtrn: {:?}", conf);
   // check_config(&config, &mon)?;
 
@@ -318,7 +319,7 @@ fn main() -> Result<()> {
 fn exec_cmds(cmds: Vec<String>) -> Result<bool> {
   cmds.iter().for_each(|e| {
     let mut cmd = Command::new("/usr/bin/hyprctl");
-    cmd.arg(e);
+    cmd.args(e.split(" "));
     let out = cmd.output().unwrap();
     println!(
       "{:?}, {} {}",
