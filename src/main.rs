@@ -282,11 +282,11 @@ fn main() -> Result<()> {
   let filepath = "/tmp/hypr/".to_owned() + &hyprland_instance + "/.socket2.sock";
   let path = Path::new(&filepath);
 
-  let config: Vec<Action> = get_config().unwrap();
-
   let mut mon: MonList = get_monitors();
 
-  println!("rtrn: {:?}", determine_config(config, mon.clone())?);
+  let mut conf = determine_config(get_config()?, mon.clone())?;
+
+  println!("rtrn: {:?}", conf);
   // check_config(&config, &mon)?;
 
   loop {
@@ -301,12 +301,35 @@ fn main() -> Result<()> {
       match x {
         "monitorremoved" => {
           mon = get_monitors();
+          conf = determine_config(get_config().unwrap(), mon.clone()).unwrap();
+          exec_cmds(conf.cmds.clone()).unwrap();
         }
         "monitoradded" => {
           mon = get_monitors();
+          conf = determine_config(get_config().unwrap(), mon.clone()).unwrap();
+          exec_cmds(conf.cmds.clone()).unwrap();
         }
         _ => {}
       }
     })
   }
+}
+
+fn exec_cmds(cmds: Vec<String>) -> Result<bool> {
+  cmds.iter().for_each(|e| {
+    let mut cmd = Command::new("/usr/bin/hyprctl");
+    cmd.arg(e);
+    let out = cmd.output().unwrap();
+    println!(
+      "{:?}, {} {}",
+      out,
+      cmd.get_program().to_str().to_owned().unwrap(),
+      cmd
+        .get_args()
+        .map(|e| e.to_str().unwrap())
+        .collect::<Vec<&str>>()
+        .join(" ")
+    );
+  });
+  Ok(true)
 }
