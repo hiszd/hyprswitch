@@ -38,6 +38,8 @@ The name of the monitor is can be gotten from running `hyprctl monitors`.
 The "cmds" item is a list of commands to run when the configuration is applied.
 These commands are executed in order.
 You can write them just like you type them into your terminal.(Meaning they look in your $PATH)
+You can also add in the "cmds" string a string like "${mons1}" which will substitute the first monitor in the list of monitors, or "${mons2}" for the second.
+This makes it more composable and easier to copy and paste.
 Any paths using tilde in them(e.g. "~/execme.sh") will redirect to the current users XDG_CONFIG_HOME directory.
 
 
