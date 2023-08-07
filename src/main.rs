@@ -107,6 +107,10 @@ fn get_monitors() -> MonList {
   MonList { monitors: monjson }
 }
 
+fn replace_home(s: String) -> String {
+  s.replace("~", &home::home_dir().unwrap().to_str().unwrap().to_owned())
+}
+
 fn get_config() -> Result<Vec<Action>> {
   let dir: &str =
     &(home::home_dir().unwrap().to_str().unwrap().to_owned() + "/.config/hyprswitch/");
@@ -119,7 +123,6 @@ fn get_config() -> Result<Vec<Action>> {
       return Err(e.into());
     }
   };
-  // println!("{}", fil);
 
   let jsn: Vec<Action> = serde_json::from_str(&fil).unwrap();
   Ok(jsn)
@@ -148,7 +151,6 @@ fn parse_cmd(c: String, mons: &MonRtrn) -> Result<(String, Vec<String>)> {
   let req_regex = text("${mons") + one_or_more(digit()) + text("}");
   let opt_regex = text("${&mons") + one_or_more(digit()) + text("}");
   let mut req: Vec<String> = Vec::new();
-  println!("\n*** {:?} ***", mons);
   req_regex.to_regex().find_iter(&c).for_each(|e| {
     cmds.push(e.as_str().to_string());
     let b: Vec<&str> = c.split(e.as_str()).collect();
@@ -227,15 +229,15 @@ fn determine_config(actions: Vec<Action>, mons: MonList) -> Result<Action> {
     let mut reqmatch: usize = 0;
     let mut optmatch: usize = 0;
     let montyp: MonRtrn = parse_mons(&e.mons);
-    println!(
-      "\n{:?} *** {:?}\n",
-      montyp,
-      mons
-        .monitors
-        .iter()
-        .map(|e| e.name.as_str())
-        .collect::<Vec<&str>>()
-    );
+    // println!(
+    //   "\n{:?} *** {:?}\n",
+    //   montyp,
+    //   mons
+    //     .monitors
+    //     .iter()
+    //     .map(|e| e.name.as_str())
+    //     .collect::<Vec<&str>>()
+    // );
     if montyp.required.iter().len() > 0 {
       montyp.required.iter().for_each(|e| {
         if mons.monitors.iter().find(|f| &f.name == e).is_some() {
@@ -252,24 +254,26 @@ fn determine_config(actions: Vec<Action>, mons: MonList) -> Result<Action> {
         }
       }
     }
-    if confident_action.1 < optmatch {
+    if confident_action.1 <= optmatch + reqmatch {
       confident_action.0 = i;
       confident_action.1 = optmatch + reqmatch;
     }
-    println!("{:?} || {}", actions[i], optmatch + reqmatch);
+    println!(
+      "{} || {}",
+      format!("{:width$}", actions[i].mons, width = 20),
+      format!("confidence: {}", optmatch + reqmatch)
+    );
   });
+  let parsed_mons = parse_mons(&actions[confident_action.0].mons);
+  println!(
+    "\nSelected Config\n*** required: {:?} optional: {:?} ***\n\n",
+    parsed_mons.required, parsed_mons.optional
+  );
   let mut final_action = actions[confident_action.0].clone();
   final_action.cmds = final_action
     .cmds
     .iter()
-    .map(|e| {
-      parse_cmd(
-        e.to_string(),
-        &parse_mons(&actions[confident_action.0].mons),
-      )
-      .unwrap()
-      .0
-    })
+    .map(|e| parse_cmd(e.to_string(), &parsed_mons).unwrap().0)
     .collect();
   Ok(final_action)
 }
@@ -287,50 +291,55 @@ fn main() -> Result<()> {
   let mut conf = determine_config(get_config()?, mon.clone())?;
 
   exec_cmds(conf.cmds.clone()).unwrap();
-  println!("rtrn: {:?}", conf);
-  // check_config(&config, &mon)?;
+  let mut pause = 0;
 
   loop {
     let strm = UnixStream::connect(path).unwrap();
 
     let stream = BufReader::new(strm);
 
-    stream.lines().for_each(|e| {
-      let arr = e.as_ref().unwrap().find(">>").unwrap();
-      let x = &e.as_ref().unwrap()[0..arr];
-      // let args: Vec<&str> = e.as_ref().unwrap()[(arr + 2)..].split(',').collect();
-      match x {
-        "monitorremoved" => {
-          mon = get_monitors();
-          conf = determine_config(get_config().unwrap(), mon.clone()).unwrap();
-          exec_cmds(conf.cmds.clone()).unwrap();
+    if pause > 10 {
+      stream.lines().for_each(|e| {
+        let arr = e.as_ref().unwrap().find(">>").unwrap();
+        let x = &e.as_ref().unwrap()[0..arr];
+        // let args: Vec<&str> = e.as_ref().unwrap()[(arr + 2)..].split(',').collect();
+        match x {
+          "monitorremoved" => {
+            mon = get_monitors();
+            conf = determine_config(get_config().unwrap(), mon.clone()).unwrap();
+            exec_cmds(conf.cmds.clone()).unwrap();
+          }
+          "monitoradded" => {
+            mon = get_monitors();
+            conf = determine_config(get_config().unwrap(), mon.clone()).unwrap();
+            exec_cmds(conf.cmds.clone()).unwrap();
+          }
+          _ => {}
         }
-        "monitoradded" => {
-          mon = get_monitors();
-          conf = determine_config(get_config().unwrap(), mon.clone()).unwrap();
-          exec_cmds(conf.cmds.clone()).unwrap();
-        }
-        _ => {}
-      }
-    })
+      })
+    } else {
+      pause += 1;
+    }
   }
 }
 
 fn exec_cmds(cmds: Vec<String>) -> Result<bool> {
+  let mut success = 0;
+  let mut failed: Vec<(String, String)> = Vec::new();
   cmds.iter().for_each(|e| {
-    let mut cmd = Command::new("/usr/bin/hyprctl");
-    cmd.args(e.split(" "));
+    let cmdsplit = e.split(" ").collect::<Vec<&str>>();
+    let mut cmd = Command::new(replace_home(cmdsplit[0].to_owned()));
+    cmd.args(cmdsplit[1..].to_vec());
     let out = cmd.output().unwrap();
-    println!(
-      "{:?}, {} {}",
-      out,
-      cmd.get_program().to_str().to_owned().unwrap(),
-      cmd
-        .get_args()
-        .map(|e| e.to_str().unwrap())
-        .collect::<Vec<&str>>()
-        .join(" ")
-    );
+
+    if out.status.success() {
+      success += 1;
+    } else {
+      failed.push((e.clone(), String::from_utf8(out.stdout).unwrap()));
+    }
   });
+  if success != cmds.len() {
+    println!("#ERROR Commands failed: {:?}", failed);
+  }
   Ok(true)
 }
