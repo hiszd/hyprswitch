@@ -48,3 +48,7 @@ Any paths using tilde in them(e.g. "~/execme.sh") will redirect to the current u
 
 To use hyprswitch all you need to do is download the release bin(or build from source) and either put it somewhere in your $PATH,
 or use an absolute path in your hyprland.conf
+An example:
+```
+exec-once /path/to/hyprswitch
+```
