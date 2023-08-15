@@ -1,6 +1,6 @@
 # hyprswitch
 
-**hyprswitch** is a simple switch for **hyprland**.
+**hyprswitch** is a "on monitor attach/detach" event listener for **hyprland** that executes commands listed in a config file.
 
 ## Features
  - Execute a command when a monitor is added, or removed
