@@ -98,7 +98,7 @@ impl MonList {
 }
 
 fn get_monitors() -> MonList {
-  let monoutput = Command::new("/usr/bin/hyprctl")
+  let monoutput = Command::new("hyprctl")
     .arg("monitors")
     .arg("-j")
     .output()
@@ -108,7 +108,7 @@ fn get_monitors() -> MonList {
 }
 
 fn replace_home(s: String) -> String {
-  s.replace("~", &home::home_dir().unwrap().to_str().unwrap().to_owned())
+  s.replace("~/", &(home::home_dir().unwrap().to_str().unwrap().to_owned() + "/")).to_owned()
 }
 
 fn get_config() -> Result<Vec<Action>> {
@@ -225,26 +225,23 @@ fn parse_mons(m: &String) -> MonRtrn {
 fn determine_config(actions: Vec<Action>, mons: MonList) -> Result<Action> {
   let mut confident_action: (usize, usize) = (0, 0);
   // TODO: if monitor is detected and not on required or optional list then optmatch -= 1
+  // TODO: if monitor is on the list of required monitors, but is not dected then reqmatch -= 1
   actions.iter().enumerate().for_each(|(i, e)| {
-    let mut reqmatch: usize = 0;
-    let mut optmatch: usize = 0;
+    let mut reqmatch: isize = 0;
+    let mut optmatch: isize = 0;
     let montyp: MonRtrn = parse_mons(&e.mons);
-    // println!(
-    //   "\n{:?} *** {:?}\n",
-    //   montyp,
-    //   mons
-    //     .monitors
-    //     .iter()
-    //     .map(|e| e.name.as_str())
-    //     .collect::<Vec<&str>>()
-    // );
     if montyp.required.iter().len() > 0 {
       montyp.required.iter().for_each(|e| {
         if mons.monitors.iter().find(|f| &f.name == e).is_some() {
           reqmatch += 1;
+        } else {
+          reqmatch -= 1;
         }
       });
-      if reqmatch == montyp.required.iter().len() {
+      if reqmatch < 0 {
+        reqmatch = 0;
+      }
+      if reqmatch as usize == montyp.required.iter().len() {
         if montyp.optional.iter().len() > 0 {
           montyp.optional.iter().for_each(|e| {
             if mons.monitors.iter().find(|f| &f.name == e).is_some() {
@@ -254,14 +251,14 @@ fn determine_config(actions: Vec<Action>, mons: MonList) -> Result<Action> {
         }
       }
     }
-    if confident_action.1 <= optmatch + reqmatch {
+    if confident_action.1 <= (optmatch + reqmatch) as usize {
       confident_action.0 = i;
-      confident_action.1 = optmatch + reqmatch;
+      confident_action.1 = (optmatch + reqmatch) as usize;
     }
     println!(
       "{} || {}",
       format!("{:width$}", actions[i].mons, width = 20),
-      format!("confidence: {}", optmatch + reqmatch)
+      format!("confidence: {}", optmatch + reqmatch,)
     );
   });
   let parsed_mons = parse_mons(&actions[confident_action.0].mons);
@@ -327,15 +324,16 @@ fn exec_cmds(cmds: Vec<String>) -> Result<bool> {
   let mut success = 0;
   let mut failed: Vec<(String, String)> = Vec::new();
   cmds.iter().for_each(|e| {
-    let cmdsplit = e.split(" ").collect::<Vec<&str>>();
-    let mut cmd = Command::new(replace_home(cmdsplit[0].to_owned()));
-    cmd.args(cmdsplit[1..].to_vec());
+    let cmds = replace_home(e.clone());
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c");
+    cmd.arg(&cmds);
     let out = cmd.output().unwrap();
 
     if out.status.success() {
       success += 1;
     } else {
-      failed.push((e.clone(), String::from_utf8(out.stdout).unwrap()));
+      failed.push((e.clone(), String::from_utf8(out.stdout).unwrap() + "\n***" + &String::from_utf8(out.stderr).unwrap()));
     }
   });
   if success != cmds.len() {
