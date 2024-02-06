@@ -39,7 +39,7 @@ impl error::Error for MonitorIndex {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Config {
-  aliases: Option<Vec<serde_json::Value>>,
+  aliases: Option<Vec<String>>,
   actions: Vec<ConfigAction>,
 }
 
@@ -212,7 +212,7 @@ fn get_config() -> Result<Config> {
     return Err(createdir.unwrap_err().into());
   }
   let fil: String;
-  match fs::read_to_string(dir.to_owned() + "config.json") {
+  match fs::read_to_string(dir.to_owned() + "config.json.new") {
     Ok(b) => fil = b,
     Err(e) => {
       return Err(e.into());
@@ -221,10 +221,11 @@ fn get_config() -> Result<Config> {
 
   let jsn = serde_json::from_str::<Config>(&fil);
   match jsn {
-    Ok(jsn) => {
-      return Ok(jsn);
+    Ok(j) => {
+      return Ok(j);
     }
     Err(e) => {
+      println!("Could not parse config file: {}", e);
       return Err(e.into());
     }
   }
@@ -320,72 +321,78 @@ struct Alias {
   value: String,
 }
 
-fn parse_aliases(aliases: Vec<serde_json::Value>) -> Vec<Alias> {
+fn parse_aliases(aliases: Vec<String>) -> Vec<Alias> {
+  // the items in the array serve the following purposes: [extracted data, remainder]
+  let get_name = |e: String| -> [String; 2] {
+    let split_val = e.split(':').collect::<Vec<&str>>();
+    assert!(split_val.len() == 2);
+    [split_val[0], split_val[1]]
+  };
+
+  // the items in the array serve the following purposes: [extracted data, remainder]
+  let get_mon = |e: String| -> [String; 2] {
+    let split_val = e.split('=').collect::<Vec<&str>>();
+    assert!(split_val.len() == 2);
+    [split_val[0], split_val[1]]
+  };
+
   let all_mons = get_monitors();
   let new_aliases = aliases.iter().fold(Vec::new(), |mut acc, a| {
-    if a.is_object() {
-      let b = a.as_object().unwrap();
-      assert!(b.keys().len() == 1);
-      assert!(b.values().len() == 1);
-      let name = b.keys().next().unwrap().to_string();
-      let value = b.values().next().unwrap().to_string();
-      let split_val = value.split('=').collect::<Vec<&str>>();
-      match *split_val.get(0).unwrap_or(&"") {
-        "model" => {
-          let f = all_mons.findByModel(split_val.get(1).unwrap_or(&""));
-          if f.is_some() {
-            let m = Alias {
-              name,
-              value: f.unwrap().name.into(),
-            };
-            acc.push(m);
-          }
-          acc
+    let name = get_name(a.to_string());
+    let mon = get_mon(name[1].to_string());
+    match mon[0] {
+      "model" => {
+        let f = all_mons.findByModel(mon[1]);
+        if f.is_some() {
+          let m = Alias {
+            name: name[0].to_string(),
+            value: f.unwrap().name.into(),
+          };
+          acc.push(m);
         }
-        "make" => {
-          let f = all_mons.findByMake(split_val.get(1).unwrap_or(&""));
-          if f.is_some() {
-            let m = Alias {
-              name,
-              value: f.unwrap().name.into(),
-            };
-            acc.push(m);
-          }
-          acc
-        }
-        "serial" => {
-          let f = all_mons.findBySerial(split_val.get(1).unwrap_or(&""));
-          if f.is_some() {
-            let m = Alias {
-              name,
-              value: f.unwrap().name.into(),
-            };
-            acc.push(m);
-          }
-          acc
-        }
-        "description" => {
-          let f = all_mons.findByDescription(split_val.get(1).unwrap_or(&""));
-          if f.is_some() {
-            let m = Alias {
-              name,
-              value: f.unwrap().name.into(),
-            };
-            acc.push(m);
-          }
-          acc
-        }
-        _ => acc,
+        acc
       }
-    } else {
-      acc
+      "make" => {
+        let f = all_mons.findByMake(mon[1]);
+        if f.is_some() {
+          let m = Alias {
+            name: name[0].to_string(),
+            value: f.unwrap().name.into(),
+          };
+          acc.push(m);
+        }
+        acc
+      }
+      "serial" => {
+        let f = all_mons.findBySerial(mon[1]);
+        if f.is_some() {
+          let m = Alias {
+            name: name[0].to_string(),
+            value: f.unwrap().name.into(),
+          };
+          acc.push(m);
+        }
+        acc
+      }
+      "description" => {
+        let f = all_mons.findByDescription(mon[1]);
+        if f.is_some() {
+          let m = Alias {
+            name: name[0].to_string(),
+            value: f.unwrap().name.into(),
+          };
+          acc.push(m);
+        }
+        acc
+      }
+      _ => acc,
     }
   });
   new_aliases
 }
 
 /// parse the string into required and optional monitors
-fn parse_mons(m: &String, aliases: &Vec<serde_json::Value>) -> ActionMons {
+fn parse_mons(m: &String, aliases: &Vec<String>) -> ActionMons {
   let replace_map: Vec<Alias> = parse_aliases(aliases.to_vec());
   let mons = get_monitors();
   let mut required: Vec<Mon> = Vec::new();
