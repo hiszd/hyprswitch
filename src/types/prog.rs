@@ -156,10 +156,10 @@ impl Commands {
     .to_owned()
   }
   #[allow(dead_code)]
-  pub fn exec_cmds(cmds: Vec<String>) -> Result<bool> {
+  pub fn exec_cmds(self) -> Result<bool> {
     let mut success = 0;
     let mut failed: Vec<(String, String)> = Vec::new();
-    cmds.iter().for_each(|e| {
+    self.cmds.iter().for_each(|e| {
       let cmds = Commands::replace_home(e.clone());
       let mut cmd = Command::new("/bin/sh");
       cmd.arg("-c");
@@ -177,7 +177,7 @@ impl Commands {
         ));
       }
     });
-    if success != cmds.len() {
+    if success != self.cmds.len() {
       println!("#ERROR Commands failed: {:?}", failed);
     }
     Ok(true)
@@ -273,7 +273,7 @@ impl Action {
     new_aliases
   }
   #[allow(dead_code)]
-  pub fn from_configaction(&self, c: ConfigAction, aliases: &Vec<String>) -> Action {
+  pub fn from_configaction(c: ConfigAction, aliases: &Vec<String>) -> Action {
     let replace_map: Vec<Alias> = Action::parse_aliases(aliases.to_vec());
     let mons = Action::get_monitors();
     let mut found = ActionMon::new_mon();

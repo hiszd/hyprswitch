@@ -91,8 +91,11 @@ fn main() -> Result<()> {
 
   let config = Action::get_config()?;
 
-  let transp = config.actions.fold(Vec::new(), |mut acc, e| {
-    acc.push(Action::from_configaction(e, config.aliases.clone()));
+  let transp = config.actions.iter().fold(Vec::new(), |mut acc, e| {
+    acc.push(Action::from_configaction(
+      e.clone(),
+      &config.aliases.clone().unwrap(),
+    ));
     acc
   });
 
@@ -105,7 +108,7 @@ fn main() -> Result<()> {
   //     .iter()
   //     .fold(String::new(), |acc, e| acc + &e + "\n ")
   // );
-  exec_cmds(conf.cmds.clone()).unwrap();
+  Commands::exec_cmds(conf.cmds.clone());
   let mut pause = 0;
 
   loop {
@@ -122,12 +125,12 @@ fn main() -> Result<()> {
           "monitorremoved" => {
             let mon = Action::get_monitors();
             conf = determine_config(transp.clone()).unwrap();
-            exec_cmds(conf.cmds.clone()).unwrap();
+            Commands::exec_cmds(conf.cmds.clone());
           }
           "monitoradded" => {
             let mon = Action::get_monitors();
             conf = determine_config(transp.clone()).unwrap();
-            exec_cmds(conf.cmds.clone()).unwrap();
+            Commands::exec_cmds(conf.cmds.clone());
           }
           _ => {}
         }
