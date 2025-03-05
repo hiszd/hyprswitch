@@ -1,2 +1,2 @@
-rm ~/.config/hyprswitch/hyprswitch
-cp target/release/hyprswitch ~/.config/hyprswitch/
+rm ~/.local/bin/hyprswitch
+cp target/release/hyprswitch ~/.local/bin/
