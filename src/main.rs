@@ -310,7 +310,7 @@ fn get_config() -> Result<Config> {
     return Err(createdir.unwrap_err().into());
   }
   let fil: String;
-  match fs::read_to_string(dir.to_owned() + "config.json.new") {
+  match fs::read_to_string(dir.to_owned() + "config.json") {
     Ok(b) => fil = b,
     Err(e) => {
       return Err(e.into());
