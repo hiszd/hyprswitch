@@ -1,7 +1,7 @@
 [package]
 name = "hyprswitch"
 version = "0.1.3"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/hiszd/hyprswitch"
 license = "MIT"
 description = "A tool for executing commands when monitors are connected, or removed in Hyprland."

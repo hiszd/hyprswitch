@@ -22,6 +22,7 @@ use serde_derive::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct MonitorIndex;
 
@@ -34,8 +35,7 @@ impl fmt::Display for MonitorIndex {
   }
 }
 
-impl error::Error for MonitorIndex {
-}
+impl error::Error for MonitorIndex {}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Config {
@@ -57,45 +57,52 @@ struct Action {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Mons {
-  found: MonSelected<Mon>,
-  not_found: MonSelected<String>,
+  available: MonSelected<Mon>,
+  not_available: MonSelected<String>,
 }
 
 impl Action {
-  fn from_configaction(c: ConfigAction, aliases: &Vec<String>) -> Action {
+  fn from_configaction(c: ConfigAction, aliases: &[String]) -> Action {
     let replace_map: Vec<Alias> = parse_aliases(aliases.to_vec());
     let mons = get_monitors();
-    let mut found = MonSelected::new_mon();
-    let mut not_found = MonSelected::new_string();
+    let mut available = MonSelected::new_mon();
+    let mut not_available: MonSelected<String> = MonSelected::new_string();
     c.mons.split(',').for_each(|e| {
-      if e.starts_with("&") {
-        let mut f = e[1..].to_string();
+      if let Some(f) = e.strip_prefix("&") {
+        let mut f = f.to_string();
         let find = replace_map.iter().find(|a| a.name == f);
-        if find.is_some() {
-          f = find.unwrap().value.clone()
+        if let Some(find1) = find {
+          f = find1.value.clone();
         }
-        let mon = mons.findByName(f.as_str());
-        if mon.is_some() {
-          found.optional.push(mon.unwrap());
+        let mon = mons.findByName(&f);
+        if let Some(mon1) = mon
+          && !mon1.disabled
+        {
+          available.optional.push(mon1);
         } else {
-          not_found.optional.push(f);
+          not_available.optional.push(f.to_string());
         }
       } else {
         let mut f = e.to_string();
         let find = replace_map.iter().find(|a| a.name == f);
-        if find.is_some() {
-          f = find.unwrap().value.clone()
+        if let Some(find1) = find {
+          f = find1.value.clone()
         }
         let mon = mons.findByName(f.as_str());
-        if mon.is_some() {
-          found.required.push(mon.unwrap());
+        if let Some(mon1) = mon
+          && !mon1.disabled
+        {
+          available.required.push(mon1);
         } else {
-          not_found.required.push(f);
+          not_available.required.push(f);
         }
       }
     });
     Action {
-      mons: Mons { found, not_found },
+      mons: Mons {
+        available,
+        not_available,
+      },
       cmds: c.cmds,
     }
   }
@@ -186,6 +193,7 @@ pub struct Mon {
   focused: bool,
   dpmsStatus: bool,
   vrr: bool,
+  disabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -201,11 +209,7 @@ impl MonList {
         idx = Some(i);
       }
     });
-    if idx.is_some() {
-      Some(self.monitors[idx.unwrap()].clone())
-    } else {
-      None
-    }
+    idx.map(|idx1| self.monitors[idx1].clone())
   }
   pub fn findByName(&self, name: &str) -> Option<Mon> {
     let mut idx: Option<usize> = None;
@@ -214,11 +218,7 @@ impl MonList {
         idx = Some(i);
       }
     });
-    if idx.is_some() {
-      Some(self.monitors[idx.unwrap()].clone())
-    } else {
-      None
-    }
+    idx.map(|idx1| self.monitors[idx1].clone())
   }
   pub fn findByModel(&self, name: &str) -> Option<Mon> {
     let mut idx: Option<usize> = None;
@@ -227,11 +227,7 @@ impl MonList {
         idx = Some(i);
       }
     });
-    if idx.is_some() {
-      Some(self.monitors[idx.unwrap()].clone())
-    } else {
-      None
-    }
+    idx.map(|idx1| self.monitors[idx1].clone())
   }
   pub fn findByMake(&self, name: &str) -> Option<Mon> {
     let mut idx: Option<usize> = None;
@@ -240,11 +236,7 @@ impl MonList {
         idx = Some(i);
       }
     });
-    if idx.is_some() {
-      Some(self.monitors[idx.unwrap()].clone())
-    } else {
-      None
-    }
+    idx.map(|idx1| self.monitors[idx1].clone())
   }
   pub fn findBySerial(&self, name: &str) -> Option<Mon> {
     let mut idx: Option<usize> = None;
@@ -253,11 +245,7 @@ impl MonList {
         idx = Some(i);
       }
     });
-    if idx.is_some() {
-      Some(self.monitors[idx.unwrap()].clone())
-    } else {
-      None
-    }
+    idx.map(|idx1| self.monitors[idx1].clone())
   }
   pub fn findByDescription(&self, name: &str) -> Option<Mon> {
     let mut idx: Option<usize> = None;
@@ -266,11 +254,7 @@ impl MonList {
         idx = Some(i);
       }
     });
-    if idx.is_some() {
-      Some(self.monitors[idx.unwrap()].clone())
-    } else {
-      None
-    }
+    idx.map(|idx1| self.monitors[idx1].clone())
   }
 }
 
@@ -306,12 +290,11 @@ fn get_config() -> Result<Config> {
   let dir: &str = &(homestr.unwrap().to_owned() + "/.config/hyprswitch/");
 
   let createdir = fs::create_dir_all(dir);
-  if createdir.is_err() {
-    return Err(createdir.unwrap_err().into());
+  if let Err(e) = createdir {
+    return Err(e.into());
   }
-  let fil: String;
-  match fs::read_to_string(dir.to_owned() + "config.json") {
-    Ok(b) => fil = b,
+  let fil = match fs::read_to_string(dir.to_owned() + "config.json") {
+    Ok(b) => b,
     Err(e) => {
       return Err(e.into());
     }
@@ -319,12 +302,10 @@ fn get_config() -> Result<Config> {
 
   let jsn = serde_json::from_str::<Config>(&fil);
   match jsn {
-    Ok(j) => {
-      return Ok(j);
-    }
+    Ok(j) => Ok(j),
     Err(e) => {
       println!("Could not parse config file: {}", e);
-      return Err(e.into());
+      Err(e.into())
     }
   }
 }
@@ -356,10 +337,9 @@ fn parse_cmd(c: String, mons: &MonSelected<Mon>) -> Result<(String, Vec<String>)
         num,
         mons.required.len()
       );
-      Err::<(String, Vec<String>), MonitorIndex>(MonitorIndex).unwrap();
     }
   });
-  if req.len() == 0 {
+  if req.is_empty() {
     req.push(c);
   }
   let req_string = req.join(",");
@@ -385,10 +365,9 @@ fn parse_cmd(c: String, mons: &MonSelected<Mon>) -> Result<(String, Vec<String>)
         num,
         mons.optional.len()
       );
-      Err::<(String, Vec<String>), MonitorIndex>(MonitorIndex).unwrap();
     }
   });
-  if opt.len() == 0 {
+  if opt.is_empty() {
     opt.push(req_string);
   }
 
@@ -401,13 +380,12 @@ fn transpose_config(conf: Config) -> Vec<Action> {
     aliases = a;
   }
   let actions: Vec<ConfigAction> = conf.actions;
-  let newacts = actions.iter().fold(Vec::new(), |acc, e| {
+  actions.iter().fold(Vec::new(), |acc, e| {
     let mut a = acc.clone();
     let act = Action::from_configaction(e.clone(), &aliases);
     a.push(act);
     a
-  });
-  newacts
+  })
 }
 
 struct Alias {
@@ -431,16 +409,16 @@ fn parse_aliases(aliases: Vec<String>) -> Vec<Alias> {
   };
 
   let all_mons = get_monitors();
-  let new_aliases = aliases.iter().fold(Vec::new(), |mut acc, a| {
+  aliases.iter().fold(Vec::new(), |mut acc, a| {
     let name = get_name(a.to_string());
     let mon = get_mon(name[1].to_string());
     match mon[0].as_str() {
       "model" => {
         let f = all_mons.findByModel(&mon[1]);
-        if f.is_some() {
+        if let Some(f1) = f {
           let m = Alias {
             name: name[0].to_string(),
-            value: f.unwrap().name.into(),
+            value: f1.name,
           };
           acc.push(m);
         }
@@ -448,10 +426,10 @@ fn parse_aliases(aliases: Vec<String>) -> Vec<Alias> {
       }
       "make" => {
         let f = all_mons.findByMake(&mon[1]);
-        if f.is_some() {
+        if let Some(f1) = f {
           let m = Alias {
             name: name[0].to_string(),
-            value: f.unwrap().name.into(),
+            value: f1.name,
           };
           acc.push(m);
         }
@@ -459,10 +437,10 @@ fn parse_aliases(aliases: Vec<String>) -> Vec<Alias> {
       }
       "serial" => {
         let f = all_mons.findBySerial(&mon[1]);
-        if f.is_some() {
+        if let Some(f1) = f {
           let m = Alias {
             name: name[0].to_string(),
-            value: f.unwrap().name.into(),
+            value: f1.name,
           };
           acc.push(m);
         }
@@ -470,10 +448,10 @@ fn parse_aliases(aliases: Vec<String>) -> Vec<Alias> {
       }
       "description" => {
         let f = all_mons.findByDescription(&mon[1]);
-        if f.is_some() {
+        if let Some(f1) = f {
           let m = Alias {
             name: name[0].to_string(),
-            value: f.unwrap().name.into(),
+            value: f1.name,
           };
           acc.push(m);
         }
@@ -481,8 +459,7 @@ fn parse_aliases(aliases: Vec<String>) -> Vec<Alias> {
       }
       _ => acc,
     }
-  });
-  new_aliases
+  })
 }
 
 /// take the list of actions and the active monitors and determine the config to apply
@@ -493,38 +470,43 @@ fn determine_config(actions: Vec<Action>) -> Result<Action> {
   actions.iter().enumerate().for_each(|(i, e)| {
     let mut reqmatch: isize = 0;
     let mut optmatch: isize = 0;
-    if e.mons.found.required.iter().len() > 0 {
-      reqmatch += e.mons.found.required.iter().len() as isize;
-      reqmatch -= e.mons.not_found.required.iter().len() as isize;
+    if e.mons.available.required.iter().len() > 0 {
+      reqmatch += e.mons.available.required.iter().len() as isize;
+      reqmatch -= e.mons.not_available.required.iter().len() as isize;
       if reqmatch < 0 {
         reqmatch = 0;
       }
-      if reqmatch as usize
-        == (e.mons.found.required.iter().len() + e.mons.not_found.required.iter().len())
+      if (reqmatch as usize
+        == e.mons.available.required.iter().len() + e.mons.not_available.required.iter().len())
+        && (e.mons.available.optional.iter().len() > 0)
       {
-        if e.mons.found.optional.iter().len() > 0 {
-          optmatch += e.mons.found.optional.iter().len() as isize;
-        }
+        optmatch += e.mons.available.optional.iter().len() as isize;
       }
     }
     if confident_action.1 <= (optmatch + reqmatch) as usize {
       confident_action.0 = i;
       confident_action.1 = (optmatch + reqmatch) as usize;
     }
-    let reqstr =
-      actions[i].mons.found.required_string() + &actions[i].mons.not_found.required_string();
-    let optstr =
-      actions[i].mons.found.optional_string() + &actions[i].mons.not_found.optional_string();
+    let reqstr = actions[i].mons.available.required_string()
+      + &actions[i].mons.not_available.required_string();
+    let optstr = actions[i].mons.available.optional_string()
+      + &actions[i].mons.not_available.optional_string();
     println!(
       "{} || {}",
       format!("{:width$}", reqstr + &optstr, width = 20),
       format!("confidence: {}", optmatch + reqmatch,)
     );
   });
-  let reqstr = actions[confident_action.0].mons.found.required_string()
-    + &actions[confident_action.0].mons.not_found.required_string();
-  let optstr = actions[confident_action.0].mons.found.optional_string()
-    + &actions[confident_action.0].mons.not_found.optional_string();
+  let reqstr = actions[confident_action.0].mons.available.required_string()
+    + &actions[confident_action.0]
+      .mons
+      .not_available
+      .required_string();
+  let optstr = actions[confident_action.0].mons.available.optional_string()
+    + &actions[confident_action.0]
+      .mons
+      .not_available
+      .optional_string();
   println!(
     "\nSelected Config\n*** required: {:?} optional: {:?} ***\n\n",
     reqstr, optstr
@@ -534,7 +516,7 @@ fn determine_config(actions: Vec<Action>) -> Result<Action> {
     .cmds
     .iter()
     .map(|e| {
-      parse_cmd(e.to_string(), &final_action.mons.found)
+      parse_cmd(e.to_string(), &final_action.mons.available)
         .unwrap()
         .0
     })
@@ -576,13 +558,11 @@ fn main() -> Result<()> {
   let filepath = runtime_dir + "/hypr/" + &hyprland_instance + "/.socket2.sock";
   let path = Path::new(&filepath);
 
-  let mut mon: MonList = get_monitors();
-
   let config = get_config()?;
 
-  let transp = transpose_config(config);
+  let transp = transpose_config(config.clone());
 
-  let mut conf = determine_config(transp.clone())?;
+  let conf = determine_config(transp.clone())?;
 
   // println!(
   //   "#DEBUG \n{}",
@@ -596,27 +576,32 @@ fn main() -> Result<()> {
 
   loop {
     let strm = UnixStream::connect(path);
-    match &strm {
-      Err(e) => println!("Couldn't connect to {filepath:?}, because of {e:?}"),
-      _ => {}
+    if let Err(e) = &strm {
+      println!("Couldn't connect to {filepath:?}, because of {e:?}")
     }
 
     let stream = BufReader::new(strm.unwrap());
 
+    let loopconfig = config.clone();
+
     if pause > 100 {
-      stream.lines().for_each(|e| {
-        let arr = e.as_ref().unwrap().find(">>").unwrap();
-        let x = &e.as_ref().unwrap()[0..arr];
+      stream.lines().for_each(move |e| {
+        let e = e.as_ref().unwrap();
+        println!("#DEBUG {e}");
+        let arr = e.find(">>").unwrap();
+        let x = &e[0..arr];
         // let args: Vec<&str> = e.as_ref().unwrap()[(arr + 2)..].split(',').collect();
         match x {
-          "monitorremoved" => {
-            mon = get_monitors();
-            conf = determine_config(transp.clone()).unwrap();
+          "monitorremoved" | "monitorremovedv2" => {
+            // thread::sleep(Duration::from_secs(3));
+            let transp = transpose_config(loopconfig.clone());
+            let conf = determine_config(transp.clone()).unwrap();
             exec_cmds(conf.cmds.clone()).unwrap();
           }
-          "monitoradded" => {
-            mon = get_monitors();
-            conf = determine_config(transp.clone()).unwrap();
+          "monitoradded" | "monitoraddedv2" => {
+            // thread::sleep(Duration::from_secs(3));
+            let transp = transpose_config(loopconfig.clone());
+            let conf = determine_config(transp.clone()).unwrap();
             exec_cmds(conf.cmds.clone()).unwrap();
           }
           _ => {}
