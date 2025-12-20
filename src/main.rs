@@ -587,7 +587,6 @@ fn main() -> Result<()> {
     if pause > 100 {
       stream.lines().for_each(move |e| {
         let e = e.as_ref().unwrap();
-        println!("#DEBUG {e}");
         let arr = e.find(">>").unwrap();
         let x = &e[0..arr];
         // let args: Vec<&str> = e.as_ref().unwrap()[(arr + 2)..].split(',').collect();
