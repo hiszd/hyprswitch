@@ -29,10 +29,10 @@ pub fn exec_cmds(cmds: Vec<String>) -> Result<bool, CommandsExecError> {
     if out.status.success() {
       success += 1;
     } else {
-      failed.push((
-        e.clone(),
-        String::from_utf8(out.stdout).unwrap() + "\n***" + &String::from_utf8(out.stderr).unwrap(),
-      ));
+      let failed_str =
+        String::from_utf8(out.stdout).unwrap() + "\n***" + &String::from_utf8(out.stderr).unwrap();
+      println!("Failed: {} - {}", e, failed_str);
+      failed.push((e.clone(), failed_str));
     }
   });
   if success != cmds.len() {
