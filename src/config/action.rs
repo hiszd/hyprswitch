@@ -100,7 +100,7 @@ impl Action {
     self.monandcon.1 = if (cmons - smons) == 0 {
       smons as isize
     } else {
-      (smons - cmons) as isize
+      smons as isize - cmons as isize
     };
   }
   pub fn exec_cmds(&self) -> Result<bool, String> {

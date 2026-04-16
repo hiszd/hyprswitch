@@ -67,6 +67,20 @@ fn main() -> Result<()> {
 
   let config = get_config()?;
 
+  // Wait for workspaces to exist (max 10 seconds)
+  let mut retries = 10;
+  while retries > 0 {
+    if commands::hyprctl::workspaces_exist() {
+      break;
+    }
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    retries -= 1;
+  }
+
+  if retries == 0 {
+    panic!("Timeout waiting for workspaces to exist after 10 seconds");
+  }
+
   let monitors = commands::hyprctl::get_monitors();
   let aliases: Vec<config::alias::Alias> = config
     .aliases

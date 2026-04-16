@@ -63,3 +63,15 @@ pub fn get_monitors() -> Vec<MonitorJson> {
     .unwrap();
   serde_json::from_slice::<Vec<MonitorJson>>(&monoutput.stdout).unwrap()
 }
+
+pub fn workspaces_exist() -> bool {
+  let output = Command::new("hyprctl").arg("workspaces").arg("-j").output();
+
+  match output {
+    Ok(out) if out.status.success() => {
+      let json_str = String::from_utf8_lossy(&out.stdout);
+      !json_str.trim().eq("[]")
+    }
+    _ => false,
+  }
+}
